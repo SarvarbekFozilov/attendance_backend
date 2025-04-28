@@ -155,71 +155,69 @@ func ExcelReaderByCreate(
 
 		// Validate required fields
 		if userData.EmployeeID == "" {
-			userErrors.EmployeeID = "Employee ID maydoni to'liq emas"
+			userErrors.EmployeeID = "社員IDが未入力です"
 		}
 		if userData.LastName == "" {
-			userErrors.LastName = "Last Name maydoni to'liq emas"
+			userErrors.LastName = "姓が未入力です"
 		}
 		if userData.FirstName == "" {
-			userErrors.FirstName = "First Name maydoni to'liq emas"
+			userErrors.FirstName = "名が未入力です"
 		}
 		if userData.Role == "" {
-			userErrors.Role = "Role maydoni to'liq emas"
+			userErrors.Role = "役割が未入力です"
 		}
 		if userData.DepartmentName == "" {
-			userErrors.DepartmentName = "Department maydoni to'liq emas"
+			userErrors.DepartmentName = "部署が未入力です"
 		}
 		if userData.PositionName == "" {
-			userErrors.PositionName = "Position maydoni to'liq emas"
+			userErrors.PositionName = "職位が未入力です"
 		}
 
 		// Validate half-width characters
 		if !isHalfWidth(userData.EmployeeID) {
-			userErrors.EmployeeID = "EmployeeID Half-width formatda bo'lishi kerak"
+			userErrors.EmployeeID = "社員IDは半角で入力してください"
 		}
 		if !isHalfWidth(userData.Password) {
-			userErrors.Password = "Password Half-width formatda bo'lishi kerak"
+			userErrors.Password = "パスワードは半角で入力してください"
 		}
 		if userData.Email != "" && !isHalfWidth(userData.Email) {
-			userErrors.Email = "Email Half-width formatda bo'lishi kerak"
+			userErrors.Email = "メールアドレスは半角で入力してください"
 		}
 
 		// Check for duplicates
 		if _, exists := employeeIDMap[userData.EmployeeID]; exists {
-			userErrors.EmployeeID = "Bu EmployeeID allaqachon mavjud (DBda)"
+			userErrors.EmployeeID = "この社員IDは既に使用されています"
 		}
 		if prevRow, exists := localEmployeeIDs[userData.EmployeeID]; exists {
-			userErrors.EmployeeID = fmt.Sprintf("Bu EmployeeID faylda dublikat (%d-qator)", prevRow)
+			userErrors.EmployeeID = fmt.Sprintf("この社員IDは%d行目で重複しています", prevRow)
 		}
 
 		// Validate email
 		if userData.Email != "" {
 			if _, exists := existingEmailMap[userData.Email]; exists {
-				userErrors.Email = "Bu Email allaqachon mavjud (DBda)"
+				userErrors.Email = "このメールアドレスは既に使用されています"
 			}
 			if prevRow, exists := localEmails[userData.Email]; exists {
-				userErrors.Email = fmt.Sprintf("Bu Email faylda dublikat (%d-qator)", prevRow)
+				userErrors.Email = fmt.Sprintf("このメールアドレスは%d行目で重複しています", prevRow)
 			}
 
 			if !emailRegex.MatchString(userData.Email) {
-				userErrors.Email = "Email formati noto'g'ri"
+				userErrors.Email = "メールアドレスの形式が正しくありません"
 			}
 		}
 
 		// Validate phone
 		if userData.Phone != "" && !phoneRegex.MatchString(userData.Phone) {
-			userErrors.Phone = "Telefon raqam formati noto'g'ri"
+			userErrors.Phone = "電話番号の形式が正しくありません"
 		}
 
 		// Check department and position
-		_, deptOK := departmentMap[userData.DepartmentName]
-		_, posOK := positionMap[userData.PositionName]
-		if !deptOK {
-			userErrors.DepartmentName = "Department nomi mavjud emas"
-		}
-		if !posOK {
-			userErrors.PositionName = "Position nomi mavjud emas"
-		}
+        if _, deptOK := departmentMap[userData.DepartmentName]; !deptOK {
+            userErrors.DepartmentName = "部署名が存在しません"
+        }
+        if _, posOK := positionMap[userData.PositionName]; !posOK {
+            userErrors.PositionName = "職位名が存在しません"
+        }
 
 		// Check if there are any errors
 		hasErrors := userErrors != submodel.UserErrors{}
@@ -336,49 +334,47 @@ func ExcelReaderByEdit(
 
 		// Validate required fields
 		if userData.EmployeeID == "" {
-			userErrors.EmployeeID = "Employee ID maydoni to'liq emas"
+			userErrors.EmployeeID = "社員IDが未入力です"
 		}
 		if userData.LastName == "" {
-			userErrors.LastName = "Last Name maydoni to'liq emas"
+			userErrors.LastName = "姓が未入力です"
 		}
 		if userData.FirstName == "" {
-			userErrors.FirstName = "First Name maydoni to'liq emas"
+			userErrors.FirstName = "名が未入力です"
 		}
 		if userData.Role == "" {
-			userErrors.Role = "Role maydoni to'liq emas"
+			userErrors.Role = "役割が未入力です"
 		}
 		if userData.DepartmentName == "" {
-			userErrors.DepartmentName = "Department maydoni to'liq emas"
+			userErrors.DepartmentName = "部署が未入力です"
 		}
 		if userData.PositionName == "" {
-			userErrors.PositionName = "Position maydoni to'liq emas"
+			userErrors.PositionName = "職位が未入力です"
 		}
 
 		// Validate half-width characters
 		if !isHalfWidth(userData.EmployeeID) {
-			userErrors.EmployeeID = "EmployeeID Half-width formatda bo'lishi kerak"
+			userErrors.EmployeeID = "社員IDは半角で入力してください"
 		}
 		if !isHalfWidth(userData.Password) {
-			userErrors.Password = "Password Half-width formatda bo'lishi kerak"
+			userErrors.Password = "パスワードは半角で入力してください"
 		}
 		if userData.Email != "" && !isHalfWidth(userData.Email) {
-			userErrors.Email = "Email Half-width formatda bo'lishi kerak"
+			userErrors.Email = "メールアドレスは半角で入力してください"
 		}
 
 		// Check department and position
-		_, deptOK := departmentMap[userData.DepartmentName]
-		_, posOK := positionMap[userData.PositionName]
-		if !deptOK {
-			userErrors.DepartmentName = "Department nomi mavjud emas"
-		}
-		if !posOK {
-			userErrors.PositionName = "Position nomi mavjud emas"
-		}
+        if _, deptOK := departmentMap[userData.DepartmentName]; !deptOK {
+            userErrors.DepartmentName = "部署名が存在しません"
+        }
+        if _, posOK := positionMap[userData.PositionName]; !posOK {
+            userErrors.PositionName = "職位名が存在しません"
+        }
 
 		// Check for duplicates in DB (excluding self)
 		if _, exists := existingIDs[userData.EmployeeID]; exists {
 			if _, selfExists := localExistingIDs[userData.EmployeeID]; !selfExists {
-				userErrors.EmployeeID = "Bu EmployeeID allaqachon mavjud (DBda)"
+				userErrors.EmployeeID = "この社員IDは既に使用されています"
 			}
 		}
 
@@ -386,28 +382,28 @@ func ExcelReaderByEdit(
 		if userData.Email != "" {
 			if _, exists := existingEmails[userData.Email]; exists {
 				if _, selfExists := localExistingEmails[userData.Email]; !selfExists {
-					userErrors.Email = "Bu Email allaqachon mavjud (DBda)"
+					userErrors.Email = "このメールアドレスは既に使用されています"
 				}
 			}
 		}
 
 		// Validate email format
 		if userData.Email != "" && !emailRegex.MatchString(userData.Email) {
-			userErrors.Email = "Email formati noto'g'ri"
+			userErrors.Email = "メールアドレスの形式が正しくありません"
 		}
 
 		// Validate phone format
 		if userData.Phone != "" && !phoneRegex.MatchString(userData.Phone) {
-			userErrors.Phone = "Telefon raqam formati noto'g'ri"
+			userErrors.Phone = "電話番号の形式が正しくありません"
 		}
 
 		// Check for duplicates within the file
 		if prevRow, exists := localIDs[userData.EmployeeID]; exists {
-			userErrors.EmployeeID = fmt.Sprintf("Bu Employee ID faylda dublikat (%d-qator)", prevRow)
+			userErrors.EmployeeID = fmt.Sprintf("この社員IDは%d行目で重複しています", prevRow)
 		}
 		if userData.Email != "" {
 			if prevRow, exists := localEmails[userData.Email]; exists {
-				userErrors.Email = fmt.Sprintf("Bu Email faylda dublikat (%d-qator)", prevRow)
+				userErrors.Email = fmt.Sprintf("このメールアドレスは%d行目で重複しています", prevRow)
 			}
 		}
 
