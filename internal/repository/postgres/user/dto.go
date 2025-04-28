@@ -46,6 +46,7 @@ type GetListResponse struct {
 	Email        *string `json:"email"`
 }
 
+  
 type GetDetailByIdResponse struct {
 	ID           int     `json:"id"`
 	EmployeeID   *string `json:"employee_id"`

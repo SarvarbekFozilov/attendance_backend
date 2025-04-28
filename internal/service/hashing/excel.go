@@ -2,6 +2,7 @@ package hashing
 
 import (
 	"attendance/backend/foundation/web"
+	submodel "attendance/backend/internal/repository/postgres/sub_model"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -90,7 +91,7 @@ func ExcelReaderByCreate(
 	fields map[int]string,
 	departmentMap, positionMap map[string]int,
 	employeeIDMap, existingEmailMap map[string]struct{},
-) ([]UserExcellData, []UserExcellData, error) {
+) ([]UserExcellData, []submodel.InvalidUserResponse, error) {
 
 	sheetName := "従業員"
 	f, err := excelize.OpenFile(filePath)
@@ -108,7 +109,7 @@ func ExcelReaderByCreate(
 	phoneRegex := regexp.MustCompile(`^\+?\d+$`)
 
 	var users []UserExcellData
-	var incompleteUsers []UserExcellData
+	var invalidUsers []submodel.InvalidUserResponse
 
 	localEmployeeIDs := make(map[string]int)
 	localEmails := make(map[string]int)
@@ -125,7 +126,7 @@ func ExcelReaderByCreate(
 			return ""
 		}
 
-		user := UserExcellData{
+		userData := UserExcellData{
 			EmployeeID:     get(0),
 			LastName:       get(1),
 			FirstName:      get(2),
@@ -137,105 +138,126 @@ func ExcelReaderByCreate(
 			DepartmentName: get(6),
 			PositionName:   get(7),
 		}
+		var userErrors submodel.UserErrors
 
-		var errors []string
-
-		// Majburiy ustunlarni tekshirish
-		if user.EmployeeID == "" {
-			errors = append(errors, "Employee ID maydoni to‘liq emas")
-
-		}
-		if user.LastName == "" {
-			errors = append(errors, "Last Name maydoni to‘liq emas")
-
-		}
-		if user.FirstName == "" {
-			errors = append(errors, "First Name maydoni to‘liq emas")
-
-		}
-		if user.Role == "" {
-			errors = append(errors, "Role maydoni to‘liq emas")
-
-		}
-		if user.DepartmentName == "" {
-			errors = append(errors, "Department maydoni to‘liq emas")
-
-		}
-		if user.PositionName == "" {
-			errors = append(errors, "Position maydoni to‘liq emas")
-
+		userRow := submodel.UserRow{
+			EmployeeID:     userData.EmployeeID,
+			LastName:       userData.LastName,
+			FirstName:      userData.FirstName,
+			NickName:       userData.NickName,
+			Role:           userData.Role,
+			Password:       userData.Password,
+			DepartmentName: userData.DepartmentName,
+			PositionName:   userData.PositionName,
+			Phone:          userData.Phone,
+			Email:          userData.Email,
 		}
 
-		if !isHalfWidth(user.EmployeeID) || !isHalfWidth(user.Password) || (user.Email != "" && !isHalfWidth(user.Email)) {
-			errors = append(errors, "EmployeeID, Email va Password Half-width formatda bo‘lishi kerak")
+		// Validate required fields
+		if userData.EmployeeID == "" {
+			userErrors.EmployeeID = "Employee ID maydoni to'liq emas"
+		}
+		if userData.LastName == "" {
+			userErrors.LastName = "Last Name maydoni to'liq emas"
+		}
+		if userData.FirstName == "" {
+			userErrors.FirstName = "First Name maydoni to'liq emas"
+		}
+		if userData.Role == "" {
+			userErrors.Role = "Role maydoni to'liq emas"
+		}
+		if userData.DepartmentName == "" {
+			userErrors.DepartmentName = "Department maydoni to'liq emas"
+		}
+		if userData.PositionName == "" {
+			userErrors.PositionName = "Position maydoni to'liq emas"
 		}
 
-		if _, exists := employeeIDMap[user.EmployeeID]; exists {
-			errors = append(errors, "Bu EmployeeID allaqachon mavjud (DBda)")
+		// Validate half-width characters
+		if !isHalfWidth(userData.EmployeeID) {
+			userErrors.EmployeeID = "EmployeeID Half-width formatda bo'lishi kerak"
 		}
-		if prevRow, exists := localEmployeeIDs[user.EmployeeID]; exists {
-			errors = append(errors, fmt.Sprintf("Bu EmployeeID faylda dublikat (%d-qator)", prevRow))
+		if !isHalfWidth(userData.Password) {
+			userErrors.Password = "Password Half-width formatda bo'lishi kerak"
+		}
+		if userData.Email != "" && !isHalfWidth(userData.Email) {
+			userErrors.Email = "Email Half-width formatda bo'lishi kerak"
 		}
 
-		if user.Email != "" {
-			if _, exists := existingEmailMap[user.Email]; exists {
-				errors = append(errors, "Bu Email allaqachon mavjud (DBda)")
+		// Check for duplicates
+		if _, exists := employeeIDMap[userData.EmployeeID]; exists {
+			userErrors.EmployeeID = "Bu EmployeeID allaqachon mavjud (DBda)"
+		}
+		if prevRow, exists := localEmployeeIDs[userData.EmployeeID]; exists {
+			userErrors.EmployeeID = fmt.Sprintf("Bu EmployeeID faylda dublikat (%d-qator)", prevRow)
+		}
+
+		// Validate email
+		if userData.Email != "" {
+			if _, exists := existingEmailMap[userData.Email]; exists {
+				userErrors.Email = "Bu Email allaqachon mavjud (DBda)"
 			}
-			if prevRow, exists := localEmails[user.Email]; exists {
-				errors = append(errors, fmt.Sprintf("Bu Email faylda dublikat (%d-qator)", prevRow))
-			} else {
-				localEmails[user.Email] = i + 1 // Hamma holatda qo‘shish
+			if prevRow, exists := localEmails[userData.Email]; exists {
+				userErrors.Email = fmt.Sprintf("Bu Email faylda dublikat (%d-qator)", prevRow)
 			}
 
-			if !emailRegex.MatchString(user.Email) {
-				errors = append(errors, "Email formati noto‘g‘ri")
+			if !emailRegex.MatchString(userData.Email) {
+				userErrors.Email = "Email formati noto'g'ri"
 			}
 		}
 
-		if user.Phone != "" && !phoneRegex.MatchString(user.Phone) {
-			errors = append(errors, "Telefon raqam formati noto‘g‘ri")
+		// Validate phone
+		if userData.Phone != "" && !phoneRegex.MatchString(userData.Phone) {
+			userErrors.Phone = "Telefon raqam formati noto'g'ri"
 		}
 
-		deptID, deptOK := departmentMap[user.DepartmentName]
-		posID, posOK := positionMap[user.PositionName]
+		// Check department and position
+		_, deptOK := departmentMap[userData.DepartmentName]
+		_, posOK := positionMap[userData.PositionName]
 		if !deptOK {
-			errors = append(errors, "Department nomi mavjud emas")
+			userErrors.DepartmentName = "Department nomi mavjud emas"
 		}
 		if !posOK {
-			errors = append(errors, "Position nomi mavjud emas")
+			userErrors.PositionName = "Position nomi mavjud emas"
 		}
 
-		if len(errors) > 0 {
-			user.Error = strings.Join(errors, "; ")
-			incompleteUsers = append(incompleteUsers, user)
+		// Check if there are any errors
+		hasErrors := userErrors != submodel.UserErrors{}
+		if hasErrors {
+			invalidUsers = append(invalidUsers, submodel.InvalidUserResponse{
+				Row:    userRow,
+				Errors: userErrors,
+			})
 			continue
 		}
 
-		user.DepartmentID = deptID
-		user.PositionID = posID
+		// If no errors, add to valid users
+		userData.DepartmentID = departmentMap[userData.DepartmentName]
+		userData.PositionID = positionMap[userData.PositionName]
 
-		localEmployeeIDs[user.EmployeeID] = i + 1
-		if user.Email != "" {
-			localEmails[user.Email] = i + 1
+		localEmployeeIDs[userData.EmployeeID] = i + 1
+		if userData.Email != "" {
+			localEmails[userData.Email] = i + 1
 		}
 
-		users = append(users, user)
+		users = append(users, userData)
 	}
 
-	return users, incompleteUsers, nil
+	return users, invalidUsers, nil
 }
+func ExcelReaderByEdit(
+	filePath string,
+	fields map[int]string,
+	departmentMap, positionMap map[string]int,
+	existingIDs, existingEmails map[string]struct{},
+) ([]UserExcellData, []submodel.InvalidUserResponse, error) {
 
-func ExcelReaderByEdit(filePath string, fields map[int]string, departmentMap, positionMap map[string]int, existingIDs, existingEmails map[string]struct{}) ([]UserExcellData, []UserExcellData, error) {
 	sheetName := "従業員"
 	f, err := excelize.OpenFile(filePath)
 	if err != nil {
 		return nil, nil, err
 	}
-	defer func() {
-		if closeErr := f.Close(); closeErr != nil {
-			log.Printf("File close error: %v", closeErr)
-		}
-	}()
+	defer f.Close()
 
 	rows, err := f.GetRows(sheetName)
 	if err != nil {
@@ -246,9 +268,9 @@ func ExcelReaderByEdit(filePath string, fields map[int]string, departmentMap, po
 	phoneRegex := regexp.MustCompile(`^\+?\d+$`)
 
 	var users []UserExcellData
-	var incompleteUsers []UserExcellData
+	var invalidUsers []submodel.InvalidUserResponse
 
-	// Bu yerda Excel fayldagi ID va Email’larni yig‘ib olamiz
+	// Collect all IDs and Emails from the Excel file first
 	localExistingIDs := make(map[string]struct{})
 	localExistingEmails := make(map[string]struct{})
 	for i, row := range rows {
@@ -269,12 +291,10 @@ func ExcelReaderByEdit(filePath string, fields map[int]string, departmentMap, po
 		}
 	}
 
-	// Fayldagi ID va Email dublikatlarini aniqlash uchun
 	localIDs := make(map[string]int)
 	localEmails := make(map[string]int)
 
 	for i, row := range rows {
-		rowNumber := i + 1
 		if i == 0 {
 			continue
 		}
@@ -286,100 +306,134 @@ func ExcelReaderByEdit(filePath string, fields map[int]string, departmentMap, po
 			return ""
 		}
 
-		user := UserExcellData{
+		userData := UserExcellData{
 			EmployeeID:     get(0),
 			LastName:       get(1),
 			FirstName:      get(2),
 			NickName:       get(3),
 			Role:           get(4),
 			Password:       get(5),
-			Phone:          get(8),
-			Email:          get(9),
 			DepartmentName: get(6),
 			PositionName:   get(7),
+			Phone:          get(8),
+			Email:          get(9),
 		}
 
-		var errors []string
-
-		if user.EmployeeID == "" {
-			errors = append(errors, "Employee ID maydoni to‘liq emas")
-		}
-		if user.LastName == "" {
-			errors = append(errors, "Last Name maydoni to‘liq emas")
-		}
-		if user.FirstName == "" {
-			errors = append(errors, "First Name maydoni to‘liq emas")
-		}
-		if user.Role == "" {
-			errors = append(errors, "Role maydoni to‘liq emas")
-		}
-		if user.DepartmentName == "" {
-			errors = append(errors, "Department maydoni to‘liq emas")
-		}
-		if user.PositionName == "" {
-			errors = append(errors, "Position maydoni to‘liq emas")
+		userRow := submodel.UserRow{
+			EmployeeID:     userData.EmployeeID,
+			LastName:       userData.LastName,
+			FirstName:      userData.FirstName,
+			NickName:       userData.NickName,
+			Role:           userData.Role,
+			Password:       userData.Password,
+			DepartmentName: userData.DepartmentName,
+			PositionName:   userData.PositionName,
+			Phone:          userData.Phone,
+			Email:          userData.Email,
 		}
 
-		if !isHalfWidth(user.EmployeeID) || !isHalfWidth(user.Password) || (user.Email != "" && !isHalfWidth(user.Email)) {
-			errors = append(errors, "EmployeeID, Email va Password Half-width formatda bo‘lishi kerak")
+		var userErrors submodel.UserErrors
+
+		// Validate required fields
+		if userData.EmployeeID == "" {
+			userErrors.EmployeeID = "Employee ID maydoni to'liq emas"
+		}
+		if userData.LastName == "" {
+			userErrors.LastName = "Last Name maydoni to'liq emas"
+		}
+		if userData.FirstName == "" {
+			userErrors.FirstName = "First Name maydoni to'liq emas"
+		}
+		if userData.Role == "" {
+			userErrors.Role = "Role maydoni to'liq emas"
+		}
+		if userData.DepartmentName == "" {
+			userErrors.DepartmentName = "Department maydoni to'liq emas"
+		}
+		if userData.PositionName == "" {
+			userErrors.PositionName = "Position maydoni to'liq emas"
 		}
 
-		departmentID, deptOK := departmentMap[user.DepartmentName]
-		positionID, posOK := positionMap[user.PositionName]
+		// Validate half-width characters
+		if !isHalfWidth(userData.EmployeeID) {
+			userErrors.EmployeeID = "EmployeeID Half-width formatda bo'lishi kerak"
+		}
+		if !isHalfWidth(userData.Password) {
+			userErrors.Password = "Password Half-width formatda bo'lishi kerak"
+		}
+		if userData.Email != "" && !isHalfWidth(userData.Email) {
+			userErrors.Email = "Email Half-width formatda bo'lishi kerak"
+		}
+
+		// Check department and position
+		_, deptOK := departmentMap[userData.DepartmentName]
+		_, posOK := positionMap[userData.PositionName]
 		if !deptOK {
-			errors = append(errors, "Department nomi mavjud emas")
+			userErrors.DepartmentName = "Department nomi mavjud emas"
 		}
 		if !posOK {
-			errors = append(errors, "Position nomi mavjud emas")
+			userErrors.PositionName = "Position nomi mavjud emas"
 		}
 
-		if user.Email != "" && !emailRegex.MatchString(user.Email) {
-			errors = append(errors, fmt.Sprintf("Email formati noto‘g‘ri: %s", user.Email))
-		}
-
-		if _, exists := existingIDs[user.EmployeeID]; exists {
-			if _, selfExists := localExistingIDs[user.EmployeeID]; !selfExists {
-				errors = append(errors, "Bu EmployeeID allaqachon mavjud (DBda)")
+		// Check for duplicates in DB (excluding self)
+		if _, exists := existingIDs[userData.EmployeeID]; exists {
+			if _, selfExists := localExistingIDs[userData.EmployeeID]; !selfExists {
+				userErrors.EmployeeID = "Bu EmployeeID allaqachon mavjud (DBda)"
 			}
 		}
-		if user.Email != "" {
-			if _, exists := existingEmails[user.Email]; exists {
-				if _, selfExists := localExistingEmails[user.Email]; !selfExists {
-					errors = append(errors, "Bu Email allaqachon mavjud (DBda)")
+
+		// Check for email duplicates in DB (excluding self)
+		if userData.Email != "" {
+			if _, exists := existingEmails[userData.Email]; exists {
+				if _, selfExists := localExistingEmails[userData.Email]; !selfExists {
+					userErrors.Email = "Bu Email allaqachon mavjud (DBda)"
 				}
 			}
 		}
 
-		if user.Phone != "" && !phoneRegex.MatchString(user.Phone) {
-			errors = append(errors, fmt.Sprintf("Telefon raqam formati noto‘g‘ri: %s", user.Phone))
+		// Validate email format
+		if userData.Email != "" && !emailRegex.MatchString(userData.Email) {
+			userErrors.Email = "Email formati noto'g'ri"
 		}
 
-		// Faylda dublikat borligini tekshiramiz
-		if prevRow, exists := localIDs[user.EmployeeID]; exists {
-			errors = append(errors, fmt.Sprintf("Bu Employee ID faylda dublikat (%d-qator)", prevRow))
+		// Validate phone format
+		if userData.Phone != "" && !phoneRegex.MatchString(userData.Phone) {
+			userErrors.Phone = "Telefon raqam formati noto'g'ri"
 		}
-		if user.Email != "" {
-			if prevRow, exists := localEmails[user.Email]; exists {
-				errors = append(errors, fmt.Sprintf("Bu Email faylda dublikat (%d-qator)", prevRow))
+
+		// Check for duplicates within the file
+		if prevRow, exists := localIDs[userData.EmployeeID]; exists {
+			userErrors.EmployeeID = fmt.Sprintf("Bu Employee ID faylda dublikat (%d-qator)", prevRow)
+		}
+		if userData.Email != "" {
+			if prevRow, exists := localEmails[userData.Email]; exists {
+				userErrors.Email = fmt.Sprintf("Bu Email faylda dublikat (%d-qator)", prevRow)
 			}
 		}
 
-		if len(errors) > 0 {
-			user.Error = strings.Join(errors, "; ")
-			incompleteUsers = append(incompleteUsers, user)
+		// Check if there are any errors
+		hasErrors := userErrors != submodel.UserErrors{}
+		if hasErrors {
+			invalidUsers = append(invalidUsers, submodel.InvalidUserResponse{
+				Row:    userRow,
+				Errors: userErrors,
+			})
 			continue
 		}
 
-		localIDs[user.EmployeeID] = rowNumber
-		if user.Email != "" {
-			localEmails[user.Email] = rowNumber
+		// If no errors, add to valid users
+		userData.DepartmentID = departmentMap[userData.DepartmentName]
+		userData.PositionID = positionMap[userData.PositionName]
+
+		localIDs[userData.EmployeeID] = i + 1
+		if userData.Email != "" {
+			localEmails[userData.Email] = i + 1
 		}
-		user.DepartmentID = departmentID
-		user.PositionID = positionID
-		users = append(users, user)
+
+		users = append(users, userData)
 	}
 
-	return users, incompleteUsers, nil
+	return users, invalidUsers, nil
 }
 
 func ExcelReaderByDelete(filePath string, rowLen int, fields map[int]string) ([]string, string, error) {

@@ -3,6 +3,7 @@ package user
 import (
 	"attendance/backend/foundation/web"
 	"attendance/backend/internal/pkg/config"
+	submodel "attendance/backend/internal/repository/postgres/sub_model"
 	"attendance/backend/internal/repository/postgres/user"
 	"context"
 	"encoding/json"
@@ -214,18 +215,18 @@ func (uc Controller) CreateUserByExcell(c *web.Context) error {
 	}
 
 	var (
-		count           int
-		invalidFilePath string
-		err             error
+		count        int
+		invalidUsers []submodel.InvalidUserResponse
+		err          error
 	)
 
 	switch request.Mode {
 	case 1: // Create mode
-		count, invalidFilePath, err = uc.user.CreateByExcell(c.Ctx, request)
-	case 2:
-		count, invalidFilePath, err = uc.user.UpdateByExcell(c.Ctx, request)
-	case 3:
-		count, invalidFilePath, err = uc.user.DeleteByExcell(c.Ctx, request)
+		count, invalidUsers, err = uc.user.CreateByExcell(c.Ctx, request)
+	case 2: // Update mode
+		count, _, err = uc.user.UpdateByExcell(c.Ctx, request)
+	case 3: // Delete mode
+		count, _, err = uc.user.DeleteByExcell(c.Ctx, request)
 	default:
 		return c.RespondError(errors.New("invalid mode specified"))
 	}
@@ -234,34 +235,12 @@ func (uc Controller) CreateUserByExcell(c *web.Context) error {
 		return c.RespondError(err)
 	}
 
-	// Agar invalid fayl mavjud bo‘lsa, yuklashni boshlaymiz
-	if invalidFilePath != "" {
-		file, err := os.Open(invalidFilePath)
-		if err != nil {
-			return c.RespondError(err)
-		}
-		defer file.Close()
-
-		c.Header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-		c.Header("Content-Disposition", "attachment; filename=\"invalid_users.xlsx\"")
-
-		_, err = io.Copy(c.Writer, file)
-		if err != nil {
-			return c.RespondError(err)
-		}
-
-		// Agar kerak bo‘lsa, faylni keyin o‘chirish
-		os.Remove(invalidFilePath)
-		return nil
-	}
-
-	// Agar invalid fayl yo‘q bo‘lsa, json formatda qaytaramiz
 	return c.Respond(map[string]interface{}{
-		"成功した従業員数": count,
-		"ステータス":    true,
+		"success_count": count,
+		"status":        true,
+		"invalid_users": invalidUsers,
 	}, http.StatusOK)
 }
-
 func (uc Controller) UpdateUserColumns(c *web.Context) error {
 	id := c.GetParam(reflect.Int, "id").(int)
 

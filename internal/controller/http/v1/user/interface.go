@@ -2,6 +2,7 @@ package user
 
 import (
 	"attendance/backend/internal/repository/postgres/companyInfo"
+	submodel "attendance/backend/internal/repository/postgres/sub_model"
 	"attendance/backend/internal/repository/postgres/user"
 	"context"
 )
@@ -18,8 +19,8 @@ type User interface {
 	GetFullName(ctx context.Context) (user.GetFullName, error)
 
 	Create(ctx context.Context, request user.CreateRequest) (user.CreateResponse, error)
-	CreateByExcell(ctx context.Context, request user.ExcellRequest) (int, string, error)
-	UpdateByExcell(ctx context.Context, request user.ExcellRequest) (int, string, error)
+	CreateByExcell(ctx context.Context, request user.ExcellRequest) (int, []submodel.InvalidUserResponse, error)
+	UpdateByExcell(ctx context.Context, request user.ExcellRequest) (int, []submodel.InvalidUserResponse, error)
 	DeleteByExcell(ctx context.Context, request user.ExcellRequest) (int, string, error)
 	ExportEmployee(ctx context.Context) (string, error)
 	ExportTemplate(ctx context.Context) (string, error)
