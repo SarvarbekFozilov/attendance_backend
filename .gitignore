@@ -1,2 +1,2 @@
 config.yaml
-internal/controller/middleware/cors.go
+internal/middleware/cors.go
