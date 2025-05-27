@@ -224,7 +224,7 @@ func (uc Controller) CreateUserByExcell(c *web.Context) error {
 	case 1: // Create mode
 		count, invalidUsers, err = uc.user.CreateByExcell(c.Ctx, request)
 	case 2: // Update mode
-		count, _, err = uc.user.UpdateByExcell(c.Ctx, request)
+		count, invalidUsers, err = uc.user.UpdateByExcell(c.Ctx, request)
 	case 3: // Delete mode
 		count, _, err = uc.user.DeleteByExcell(c.Ctx, request)
 	default:

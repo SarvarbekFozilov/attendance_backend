@@ -114,9 +114,9 @@ func (r Repository) GetList(ctx context.Context, filter Filter) ([]GetListRespon
 		return nil, 0, err
 	}
 
-	whereQuery := fmt.Sprintf(`
+	whereQuery := fmt.Sprintln(`
 			WHERE 
-				u.deleted_at IS NULL and role='EMPLOYEE'
+				u.deleted_at IS NULL
 			`)
 
 	if filter.Search != nil {
@@ -155,6 +155,7 @@ func (r Repository) GetList(ctx context.Context, filter Filter) ([]GetListRespon
 			u.employee_id,
 			CONCAT(u.first_name, ' ', u.last_name) AS full_name,
 			u.nick_name,
+			u.role,
 			u.department_id,
 			d.name as department_name,
 			u.position_id,
@@ -186,6 +187,7 @@ func (r Repository) GetList(ctx context.Context, filter Filter) ([]GetListRespon
 			&detail.EmployeeID,
 			&detail.FullName,
 			&nickName,
+			&detail.Role,
 			&detail.DepartmentID,
 			&detail.Department,
 			&detail.PositionID,
@@ -242,6 +244,7 @@ func (r Repository) GetDetailById(ctx context.Context, id int) (GetDetailByIdRes
 			u.employee_id,
 			CONCAT(u.first_name, ' ', u.last_name) AS full_name,
 			u.nick_name,
+			u.role
 			u.department_id,
 			d.name,
 			u.position_id,

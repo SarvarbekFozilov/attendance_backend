@@ -38,6 +38,7 @@ type GetListResponse struct {
 	EmployeeID   *string `json:"employee_id"`
 	FullName     *string `json:"full_name"`
 	NickName     string  `json:"nick_name"`
+	Role		 *string  `json:"role"`
 	DepartmentID *int    `json:"department_id"`
 	Department   *string `json:"department"`
 	PositionID   *int    `json:"position_id"`

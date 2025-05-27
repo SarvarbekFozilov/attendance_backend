@@ -59,6 +59,9 @@ func NewRouter(
 
 func (r Router) Init() error {
 
+
+	// r.Use(middleware.CORS())         <- to work on localhost
+
 	r.GET("/docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler), func(ctx *gin.Context) {
 		docs.SwaggerInfo.Host = ctx.Request.Host
 		if ctx.Request.TLS != nil {
