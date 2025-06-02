@@ -5,25 +5,65 @@ import (
 	"attendance/backend/internal/commands"
 	"attendance/backend/internal/entity"
 	"attendance/backend/internal/repository/postgres/user"
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
 
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 )
 
 var (
-	errIncorrectPassword   = errors.New("社員番号またはメールアドレス が間違っています")
+	errIncorrectPassword   = errors.New("社員番号またはメールアドレスが間違っています")
 	errIncorrectEmployeeId = errors.New("パスワードが間違っています")
+	googleOAuthConfig      *oauth2.Config
+	frontendURL            string
 )
 
 type Controller struct {
 	user User
 }
 
+type GoogleUser struct {
+	ID            string `json:"id"`
+	Email         string `json:"email"`
+	VerifiedEmail bool   `json:"verified_email"`
+	Name          string `json:"name"`
+	GivenName     string `json:"given_name"`
+	FamilyName    string `json:"family_name"`
+	Picture       string `json:"picture"`
+}
+
 func NewController(user User) *Controller {
 	return &Controller{user: user}
+}
+
+func InitGoogleProvider(clientID, clientSecret, redirectURL, frontendURLConfig string) {
+    fmt.Println("=== DEBUG: InitGoogleProvider called ===")
+    fmt.Printf("ClientID: '%s'\n", clientID)
+    fmt.Printf("ClientSecret: '%s'\n", clientSecret)
+
+	googleOAuthConfig = &oauth2.Config{
+		RedirectURL:  redirectURL,
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		Scopes:       []string{"https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"},
+		Endpoint:     google.Endpoint,
+	}
+	frontendURL = frontendURLConfig
+}
+
+func generateRandomState() string {
+	b := make([]byte, 16)
+	rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 // Helper function to check if a string is a valid email
@@ -153,4 +193,110 @@ func (uc Controller) RefreshToken(c *web.Context) error {
 		},
 		"error": nil,
 	}, http.StatusOK)
+}
+
+
+func (uc Controller) GoogleAuth(c *web.Context) error {
+    if googleOAuthConfig == nil {
+        return c.RespondError(&web.Error{
+            Err:    errors.New("Google OAuth not configured"),
+            Status: http.StatusInternalServerError,
+        })
+    }
+
+    state := generateRandomState()
+    
+    oauthURL := googleOAuthConfig.AuthCodeURL(state, oauth2.AccessTypeOnline)
+    
+    fmt.Printf("Redirecting to Google OAuth: %s\n", oauthURL)
+	fmt.Printf("Redirecting to ClientID: %s\n", googleOAuthConfig.ClientID)
+	fmt.Printf("Redirecting to ClientID: %s\n", googleOAuthConfig.ClientSecret)
+    
+    c.Redirect(http.StatusTemporaryRedirect, oauthURL)
+    return nil
+}
+
+func (uc Controller) GoogleCallback(c *web.Context) error {
+	if googleOAuthConfig == nil {
+		return c.RespondError(&web.Error{
+			Err:    errors.New("Google OAuth not configured"),
+			Status: http.StatusInternalServerError,
+		})
+	}
+
+	code := c.Query("code")
+	if code == "" {
+		errorParam := c.Query("error")
+		if errorParam != "" {
+			fmt.Printf("OAuth error: %s\n", errorParam)
+			redirectURL := fmt.Sprintf("%s/login?error=%s", frontendURL, url.QueryEscape(errorParam))
+			c.Redirect(http.StatusTemporaryRedirect, redirectURL)
+			return nil
+		}
+
+		return c.RespondError(&web.Error{
+			Err:    errors.New("authorization code not found"),
+			Status: http.StatusBadRequest,
+		})
+	}
+
+	token, err := googleOAuthConfig.Exchange(context.Background(), code)
+	if err != nil {
+		fmt.Printf("Token exchange error: %v\n", err)
+		return c.RespondError(&web.Error{
+			Err:    errors.Wrap(err, "failed to exchange token"),
+			Status: http.StatusBadRequest,
+		})
+	}
+
+	client := googleOAuthConfig.Client(context.Background(), token)
+	resp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
+	if err != nil {
+		return c.RespondError(&web.Error{
+			Err:    errors.Wrap(err, "failed to get user info"),
+			Status: http.StatusInternalServerError,
+		})
+	}
+	defer resp.Body.Close()
+
+	var googleUser GoogleUser
+	if err := json.NewDecoder(resp.Body).Decode(&googleUser); err != nil {
+		return c.RespondError(&web.Error{
+			Err:    errors.Wrap(err, "failed to decode user info"),
+			Status: http.StatusInternalServerError,
+		})
+	}
+
+	fmt.Printf("Google user info: %+v\n", googleUser)
+	detail, err := uc.user.GetByEmployeeEmail(c.Ctx, googleUser.Email)
+	if err != nil || detail == nil {
+		fmt.Printf("User not found for email: %s\n", googleUser.Email)
+		errorMsg := "ユーザーが見つかりません。管理者にお問い合わせください。"
+		redirectURL := fmt.Sprintf("%s/login?error=%s", frontendURL, url.QueryEscape(errorMsg))
+		c.Redirect(http.StatusTemporaryRedirect, redirectURL)
+		return nil
+	}
+
+	accessToken, refreshToken, err := commands.GenToken(user.AuthClaims{
+		ID:   detail.ID,
+		Role: *detail.Role,
+	}, "./private.pem")
+
+	if err != nil {
+		fmt.Printf("Error generating tokens: %v\n", err)
+		return c.RespondError(&web.Error{
+			Err:    errors.New("token generation failed"),
+			Status: http.StatusInternalServerError,
+		})
+	}
+
+	redirectURL := fmt.Sprintf("%s/auth/callback?access_token=%s&refresh_token=%s&role=%s",
+		frontendURL,
+		url.QueryEscape(accessToken),
+		url.QueryEscape(refreshToken),
+		url.QueryEscape(*detail.Role))
+
+	fmt.Printf("Redirecting to frontend: %s\n", redirectURL)
+	c.Redirect(http.StatusTemporaryRedirect, redirectURL)
+	return nil
 }

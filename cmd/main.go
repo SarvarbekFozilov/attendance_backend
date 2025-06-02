@@ -57,9 +57,9 @@ func run(log *log.Logger) error {
 
 	var cfg struct {
 		conf.Version
-		DefaultLang   string `conf:"default:uz"`
-		ServerPort    string `conf:"default:8080"`
-		Web           struct {
+		DefaultLang string `conf:"default:uz"`
+		ServerPort  string `conf:"default:8080"`
+		Web         struct {
 			APIHost         string        `conf:"default:0.0.0.0:3000"`
 			DebugHost       string        `conf:"default:0.0.0.0:4000"`
 			ReadTimeout     time.Duration `conf:"default:50s"`
@@ -159,10 +159,18 @@ func run(log *log.Logger) error {
 
 	log.Println("main: Initializing database support")
 
-	yamlConfig, err := config.NewConfig() // Call the exported function
+	// Загрузка YAML конфигурации
+	yamlConfig, err := config.NewConfig()
 	if err != nil {
 		fmt.Printf("Error loading configuration: %v", err)
 	}
+
+	// Отладочный вывод конфигурации Google OAuth
+	fmt.Println("=== Google OAuth Configuration Debug ===")
+	fmt.Printf("Google Client ID: '%s'\n", yamlConfig.GoogleClientID)
+	fmt.Printf("Google Client Secret: '%s'\n", yamlConfig.GoogleClientSecret)
+	fmt.Printf("Google Redirect URL: '%s'\n", yamlConfig.GoogleRedirectURL)
+	fmt.Printf("Frontend URL: '%s'\n", yamlConfig.FrontendURL)
 
 	postgresDB := postgresql.NewDB(postgresql.Config{
 		User:          yamlConfig.DBUsername,
@@ -181,31 +189,26 @@ func run(log *log.Logger) error {
 		postgresDB.Close()
 	}()
 
-	// =====================
-
-	// =========================================================================
-	// Start Cache: redis
-
+	// Redis initialization
 	log.Println("main: Initializing cache support")
-
 	redisDB := redis.NewClient(&redis.Options{
 		Addr:     fmt.Sprintf("%s:%s", cfg.Redis.Host, cfg.Redis.Port),
 		Password: "",
 		DB:       cfg.Redis.DB,
 	})
 
-	// ======================
-
 	shutdown := make(chan os.Signal, 1)
-
-	// gin engine
 	webApp := web.NewApp(shutdown, cfg.DefaultLang)
-
-	// migrations
 	commands.MigrateUP(postgresDB)
-	//commands.Migrate(postgresDB)
 
-	r := router.NewRouter(webApp, postgresDB, redisDB, fmt.Sprintf(":%s", cfg.ServerPort), auth, yamlConfig.BaseUrl)
+	routerConfig := &router.Config{
+		GoogleClientID:     yamlConfig.GoogleClientID,
+		GoogleClientSecret: yamlConfig.GoogleClientSecret,
+		GoogleRedirectURL:  yamlConfig.GoogleRedirectURL,
+		FrontendURL:        yamlConfig.FrontendURL,
+	}
+
+	r := router.NewRouter(webApp, postgresDB, redisDB, fmt.Sprintf(":%s", cfg.ServerPort), auth, yamlConfig.BaseUrl, routerConfig)
 
 	return r.Init()
 }

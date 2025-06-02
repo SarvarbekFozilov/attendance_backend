@@ -37,6 +37,14 @@ type Router struct {
 	port               string
 	auth               *auth.Auth
 	fileServerBasePath string
+	config             *Config
+}
+
+type Config struct {
+	GoogleClientID     string `yaml:"google_client_id"`
+	GoogleClientSecret string `yaml:"google_client_secret"`
+	GoogleRedirectURL  string `yaml:"google_redirect_url"`
+	FrontendURL        string `yaml:"frontend_url"`
 }
 
 func NewRouter(
@@ -46,6 +54,7 @@ func NewRouter(
 	port string,
 	auth *auth.Auth,
 	fileServerBasePath string,
+	config *Config,
 ) *Router {
 	return &Router{
 		app,
@@ -54,13 +63,13 @@ func NewRouter(
 		port,
 		auth,
 		fileServerBasePath,
+		config,
 	}
 }
 
 func (r Router) Init() error {
 
-
-	// r.Use(middleware.CORS())         <- to work on localhost
+	// r.Use(middleware.CORS()) // <- to work on localhost
 
 	r.GET("/docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler), func(ctx *gin.Context) {
 		docs.SwaggerInfo.Host = ctx.Request.Host
@@ -87,9 +96,23 @@ func (r Router) Init() error {
 
 	fileC := file.NewController(r.App, r.fileServerBasePath)
 
+	// Initialize Google OAuth with actual config values
+	if r.config != nil {
+		auth_controller.InitGoogleProvider(
+			r.config.GoogleClientID,
+			r.config.GoogleClientSecret,
+			r.config.GoogleRedirectURL,
+			r.config.FrontendURL, 
+		)
+	}
+
 	// #auth
 	r.Post("/api/v1/sign-in", authController.SignIn)
 	r.Post("/api/v1/refresh-token", authController.RefreshToken)
+
+	// Google OAuth routes
+	r.Get("/api/v1/auth/google", authController.GoogleAuth)
+	r.Get("/api/v1/auth/google/callback", authController.GoogleCallback)
 
 	r.GET("/media/*filepath", fileC.File)
 	r.HEAD("/media/*filepath", fileC.File)
