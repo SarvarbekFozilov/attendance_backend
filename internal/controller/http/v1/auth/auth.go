@@ -206,97 +206,139 @@ func (uc Controller) GoogleAuth(c *web.Context) error {
 
     state := generateRandomState()
     
-    oauthURL := googleOAuthConfig.AuthCodeURL(state, oauth2.AccessTypeOnline)
-    
+    // Добавляем параметры для принудительного выбора аккаунта
+    oauthURL := googleOAuthConfig.AuthCodeURL(state, 
+        oauth2.AccessTypeOnline,
+        oauth2.SetAuthURLParam("prompt", "select_account"), // Принудительный выбор аккаунта
+        oauth2.SetAuthURLParam("access_type", "online"),
+    )
+
     fmt.Printf("Redirecting to Google OAuth: %s\n", oauthURL)
-	fmt.Printf("Redirecting to ClientID: %s\n", googleOAuthConfig.ClientID)
-	fmt.Printf("Redirecting to ClientID: %s\n", googleOAuthConfig.ClientSecret)
-    
+    fmt.Printf("Redirecting to ClientID: %s\n", googleOAuthConfig.ClientID)
+    fmt.Printf("Redirecting to ClientID: %s\n", googleOAuthConfig.ClientSecret)
+
     c.Redirect(http.StatusTemporaryRedirect, oauthURL)
     return nil
 }
 
 func (uc Controller) GoogleCallback(c *web.Context) error {
-	if googleOAuthConfig == nil {
-		return c.RespondError(&web.Error{
-			Err:    errors.New("Google OAuth not configured"),
-			Status: http.StatusInternalServerError,
-		})
-	}
+    if googleOAuthConfig == nil {
+        return c.RespondError(&web.Error{
+            Err:    errors.New("Google OAuth not configured"),
+            Status: http.StatusInternalServerError,
+        })
+    }
 
-	code := c.Query("code")
-	if code == "" {
-		errorParam := c.Query("error")
-		if errorParam != "" {
-			fmt.Printf("OAuth error: %s\n", errorParam)
-			redirectURL := fmt.Sprintf("%s/login?error=%s", frontendURL, url.QueryEscape(errorParam))
-			c.Redirect(http.StatusTemporaryRedirect, redirectURL)
-			return nil
-		}
+    code := c.Query("code")
+    if code == "" {
+        errorParam := c.Query("error")
+        if errorParam != "" {
+            fmt.Printf("OAuth error: %s\n", errorParam)
+            // Добавляем параметр для принудительного выбора аккаунта при повторном входе
+            redirectURL := fmt.Sprintf("%s/login?error=%s&force_select=true", frontendURL, url.QueryEscape(errorParam))
+            c.Redirect(http.StatusTemporaryRedirect, redirectURL)
+            return nil
+        }
 
-		return c.RespondError(&web.Error{
-			Err:    errors.New("authorization code not found"),
-			Status: http.StatusBadRequest,
-		})
-	}
+        return c.RespondError(&web.Error{
+            Err:    errors.New("authorization code not found"),
+            Status: http.StatusBadRequest,
+        })
+    }
 
-	token, err := googleOAuthConfig.Exchange(context.Background(), code)
-	if err != nil {
-		fmt.Printf("Token exchange error: %v\n", err)
-		return c.RespondError(&web.Error{
-			Err:    errors.Wrap(err, "failed to exchange token"),
-			Status: http.StatusBadRequest,
-		})
-	}
+    token, err := googleOAuthConfig.Exchange(context.Background(), code)
+    if err != nil {
+        fmt.Printf("Token exchange error: %v\n", err)
+        return c.RespondError(&web.Error{
+            Err:    errors.Wrap(err, "failed to exchange token"),
+            Status: http.StatusBadRequest,
+        })
+    }
 
-	client := googleOAuthConfig.Client(context.Background(), token)
-	resp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
-	if err != nil {
-		return c.RespondError(&web.Error{
-			Err:    errors.Wrap(err, "failed to get user info"),
-			Status: http.StatusInternalServerError,
-		})
-	}
-	defer resp.Body.Close()
+    client := googleOAuthConfig.Client(context.Background(), token)
+    resp, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
+    if err != nil {
+        return c.RespondError(&web.Error{
+            Err:    errors.Wrap(err, "failed to get user info"),
+            Status: http.StatusInternalServerError,
+        })
+    }
+    defer resp.Body.Close()
 
-	var googleUser GoogleUser
-	if err := json.NewDecoder(resp.Body).Decode(&googleUser); err != nil {
-		return c.RespondError(&web.Error{
-			Err:    errors.Wrap(err, "failed to decode user info"),
-			Status: http.StatusInternalServerError,
-		})
-	}
+    var googleUser GoogleUser
+    if err := json.NewDecoder(resp.Body).Decode(&googleUser); err != nil {
+        return c.RespondError(&web.Error{
+            Err:    errors.Wrap(err, "failed to decode user info"),
+            Status: http.StatusInternalServerError,
+        })
+    }
 
-	fmt.Printf("Google user info: %+v\n", googleUser)
-	detail, err := uc.user.GetByEmployeeEmail(c.Ctx, googleUser.Email)
-	if err != nil || detail == nil {
-		fmt.Printf("User not found for email: %s\n", googleUser.Email)
-		errorMsg := "ユーザーが見つかりません。管理者にお問い合わせください。"
-		redirectURL := fmt.Sprintf("%s/login?error=%s", frontendURL, url.QueryEscape(errorMsg))
-		c.Redirect(http.StatusTemporaryRedirect, redirectURL)
-		return nil
-	}
+    fmt.Printf("Google user info: %+v\n", googleUser)
+    detail, err := uc.user.GetByEmployeeEmail(c.Ctx, googleUser.Email)
+    if err != nil || detail == nil {
+        fmt.Printf("User not found for email: %s\n", googleUser.Email)
+        errorMsg := "ユーザーが見つかりません。管理者にお問い合わせください。"
+        // Добавляем параметр для принудительного выбора аккаунта
+        redirectURL := fmt.Sprintf("%s/login?error=%s&force_select=true&attempted_email=%s", 
+            frontendURL, 
+            url.QueryEscape(errorMsg),
+            url.QueryEscape(googleUser.Email))
+        c.Redirect(http.StatusTemporaryRedirect, redirectURL)
+        return nil
+    }
 
-	accessToken, refreshToken, err := commands.GenToken(user.AuthClaims{
-		ID:   detail.ID,
-		Role: *detail.Role,
-	}, "./private.pem")
+    accessToken, refreshToken, err := commands.GenToken(user.AuthClaims{
+        ID:   detail.ID,
+        Role: *detail.Role,
+    }, "./private.pem")
 
-	if err != nil {
-		fmt.Printf("Error generating tokens: %v\n", err)
-		return c.RespondError(&web.Error{
-			Err:    errors.New("token generation failed"),
-			Status: http.StatusInternalServerError,
-		})
-	}
+    if err != nil {
+        fmt.Printf("Error generating tokens: %v\n", err)
+        return c.RespondError(&web.Error{
+            Err:    errors.New("token generation failed"),
+            Status: http.StatusInternalServerError,
+        })
+    }
 
-	redirectURL := fmt.Sprintf("%s/auth/callback?access_token=%s&refresh_token=%s&role=%s",
-		frontendURL,
-		url.QueryEscape(accessToken),
-		url.QueryEscape(refreshToken),
-		url.QueryEscape(*detail.Role))
+    redirectURL := fmt.Sprintf("%s/auth/callback?access_token=%s&refresh_token=%s&role=%s",
+        frontendURL,
+        url.QueryEscape(accessToken),
+        url.QueryEscape(refreshToken),
+        url.QueryEscape(*detail.Role))
 
-	fmt.Printf("Redirecting to frontend: %s\n", redirectURL)
-	c.Redirect(http.StatusTemporaryRedirect, redirectURL)
-	return nil
+    fmt.Printf("Redirecting to frontend: %s\n", redirectURL)
+    c.Redirect(http.StatusTemporaryRedirect, redirectURL)
+    return nil
+}
+
+// Дополнительный метод для принудительного выхода из Google аккаунта
+func (uc Controller) GoogleAuthForceSelect(c *web.Context) error {
+    if googleOAuthConfig == nil {
+        return c.RespondError(&web.Error{
+            Err:    errors.New("Google OAuth not configured"),
+            Status: http.StatusInternalServerError,
+        })
+    }
+
+    state := generateRandomState()
+
+    oauthURL := googleOAuthConfig.AuthCodeURL(state, 
+        oauth2.AccessTypeOnline,
+        oauth2.SetAuthURLParam("prompt", "select_account consent"), 
+        oauth2.SetAuthURLParam("access_type", "online"),
+        oauth2.SetAuthURLParam("include_granted_scopes", "true"),
+    )
+
+    fmt.Printf("Force select - Redirecting to Google OAuth: %s\n", oauthURL)
+    c.Redirect(http.StatusTemporaryRedirect, oauthURL)
+    return nil
+}
+
+func (uc Controller) Logout(c *web.Context) error {
+    return c.Respond(map[string]interface{}{
+        "status":  true,
+        "message": "Successfully logged out",
+        "error":   nil,
+        "google_logout_url": "https://accounts.google.com/logout",
+    }, http.StatusOK)
 }

@@ -109,10 +109,12 @@ func (r Router) Init() error {
 	// #auth
 	r.Post("/api/v1/sign-in", authController.SignIn)
 	r.Post("/api/v1/refresh-token", authController.RefreshToken)
+	r.Post("/api/v1/logout", authController.Logout)
 
 	// Google OAuth routes
 	r.Get("/api/v1/auth/google", authController.GoogleAuth)
 	r.Get("/api/v1/auth/google/callback", authController.GoogleCallback)
+	r.Get("/api/v1/auth/google/force-select", authController.GoogleAuthForceSelect) 
 
 	r.GET("/media/*filepath", fileC.File)
 	r.HEAD("/media/*filepath", fileC.File)
